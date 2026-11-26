@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>core.js 테스트</title>
+<style>
+  body { font: 14px/1.5 system-ui, "Malgun Gothic", sans-serif; padding: 20px; }
+  .pass { color: #16a34a; } .fail { color: #dc2626; font-weight: 700; }
+  #summary { font-size: 18px; font-weight: 700; margin-bottom: 12px; }
+</style>
+</head>
+<body>
+<div id="summary"></div>
+<ol id="out"></ol>
+<script src="../js/core.js"></script>
+<script>
+  const C = SWCore;
+  const results = [];
+  function test(name, fn) {
+    try { fn(); results.push([name, true]); }
+    catch (e) { results.push([name, false, e.message]); }
+  }
+  function eq(a, b, msg) {
+    const A = JSON.stringify(a), B = JSON.stringify(b);
+    if (A !== B) throw new Error((msg || '') + ` 기대값 ${B}, 실제 ${A}`);
+  }
+
+  const T0 = Date.UTC(2026, 10, 26, 3, 0, 0);
+
+  test('초기 상태는 0초, 정지', () => {
+    const s = C.initial();
+    eq(C.elapsed(s, T0), 0);
+    eq(C.isPristine(s), true);
+  });
+
+  test('시작 후 경과 시간', () => {
+    const s = C.start(C.initial(), T0);
+    eq(C.elapsed(s, T0 + 1234), 1234);
+  });
+
+  test('일시정지/재개를 1000번 반복해도 오차 없음', () => {
+    let s = C.initial(), t = T0;
+    for (let i = 0; i < 1000; i++) {
+      s = C.start(s, t); t += 7;
+      s = C.pause(s, t); t += 13;   // 정지 중 시간은 포함되면 안 됨
+    }
+    eq(C.elapsed(s, t), 7000);
+  });
+
+  test('이미 실행 중이면 start는 무시', () => {
+    const s = C.start(C.initial(), T0);
+    eq(C.start(s, T0 + 500), s);
+  });
+
+  test('시계가 뒤로 가도 음수가 되지 않음', () => {
+    const s = C.start(C.initial(), T0);
+    eq(C.elapsed(s, T0 - 5000), 0);
+  });
+
+  test('랩: 구간 시간과 합계', () => {
+    let s = C.start(C.initial(), T0);
+    s = C.addLap(s, T0 + 12000);
+    s = C.addLap(s, T0 + 26000);
+    eq(s.laps, [12000, 14000]);
+    eq(C.split(s, T0 + 30000), 4000);
+    eq(C.lapSum(s), 26000);
+  });
+
+  test('정지 중에는 랩이 추가되지 않음', () => {
+    let s = C.pause(C.start(C.initial(), T0), T0 + 1000);
+    eq(C.addLap(s, T0 + 2000).laps.length, 0);
+  });
+
+  test('저장 → 앱 종료 → 1시간 뒤 복원 시 측정이 이어짐', () => {
+    let s = C.start(C.initial(), T0);
+    s = C.addLap(s, T0 + 5000);
+    const saved = C.serialize(s);
+    const restored = C.deserialize(saved);
+    eq(C.elapsed(restored, T0 + 3600000), 3600000);
+    eq(restored.laps, [5000]);
+  });
+
+  test('정지 상태 저장/복원은 1/100초까지 동일', () => {
+    const s = C.pause(C.start(C.initial(), T0), T0 + 81507);
+    const r = C.deserialize(C.serialize(s));
+    eq(C.format(C.elapsed(r, T0 + 999999)), '01:21.50');
+  });
+
+  test('손상된 저장값은 null', () => {
+    eq(C.deserialize('not json'), null);
+    eq(C.deserialize('{"v":1}'), null);
+    eq(C.deserialize('{"v":1,"running":true,"startedAt":0,"accumulated":0,"laps":[]}'), null);
+    eq(C.deserialize('{"v":1,"running":false,"startedAt":0,"accumulated":-5,"laps":[]}'), null);
+    eq(C.deserialize('{"v":1,"running":false,"startedAt":0,"accumulated":0,"laps":["a"]}'), null);
+    eq(C.deserialize(null), null);
+    eq(C.deserialize('{"v":99,"running":false,"startedAt":0,"accumulated":0,"laps":[]}'), null);
+  });
+
+  test('자정·서머타임 경계와 무관(epoch ms 기준)', () => {
+    const before = Date.UTC(2026, 2, 8, 6, 59, 0);   // 미국 DST 전환 직전
+    const s = C.start(C.initial(), before);
+    eq(C.elapsed(s, before + 120000), 120000);
+    const mid = Date.UTC(2026, 10, 26, 14, 59, 59);  // KST 자정 직전
+    eq(C.elapsed(C.start(C.initial(), mid), mid + 2000), 2000);
+  });
+
+  test('10시간 이상 장시간 측정 형식', () => {
+    const s = C.start(C.initial(), T0);
+    eq(C.format(C.elapsed(s, T0 + 10 * 3600000 + 5 * 60000 + 7890)), '10:05:07.89');
+    eq(C.formatShort(36125000), '10:02:05');
+  });
+
+  test('포맷: 버림 처리(59.999초 → 00:59.99)', () => {
+    eq(C.format(59999), '00:59.99');
+    eq(C.format(60000), '01:00.00');
+    eq(C.format(0), '00:00.00');
+    eq(C.format(-10), '00:00.00');
+  });
+
+  test('트랙 위치: 70초 랩은 60초 트랙에서 +1바퀴, 10초 지점', () => {
+    const p = C.trackPos(70000, 60000);
+    eq(p.rev, 1);
+    eq(Math.round(p.frac * 600), 100);
+  });
+
+  test('통계: 최고/최저/평균', () => {
+    eq(C.stats([12000, 14000, 19000, 9000]), { best: 3, worst: 2, avg: 13500 });
+    eq(C.stats([10000]), { best: -1, worst: -1, avg: 10000 });
+    eq(C.stats([5000, 5000]), { best: -1, worst: -1, avg: 5000 });
+    eq(C.stats([]), { best: -1, worst: -1, avg: 0 });
+  });
+
+  test('CSV 내보내기', () => {
+    const csv = C.toCSV({ total: 30000, laps: [10000, 15000] });
+    eq(csv, 'lap,lap_time,total_time,lap_ms,total_ms\r\n1,00:10.00,00:10.00,10000,10000\r\n2,00:15.00,00:25.00,15000,25000\r\ntotal,,00:30.00,,30000\r\n');
+  });
+
+  test('공유 텍스트에 최고/최저 표시', () => {
+    const txt = C.toText({ total: 30000, laps: [10000, 15000] },
+      { title: 'T', date: 'D', total: '전체', lapCount: '랩 2개', avg: '평균', lap: '랩', best: '최고', worst: '최저' });
+    if (!txt.includes('▲ 최고') || !txt.includes('▼ 최저')) throw new Error(txt);
+  });
+
+  const out = document.getElementById('out');
+  let pass = 0;
+  for (const [name, ok, msg] of results) {
+    if (ok) pass++;
+    const li = document.createElement('li');
+    li.className = ok ? 'pass' : 'fail';
+    li.textContent = (ok ? '✔ ' : '✘ ') + name + (msg ? ' — ' + msg : '');
+    out.appendChild(li);
+  }
+  const sum = document.getElementById('summary');
+  sum.textContent = `${pass} / ${results.length} 통과`;
+  sum.className = pass === results.length ? 'pass' : 'fail';
+  window.TEST_RESULT = { pass, total: results.length, failed: results.filter(r => !r[1]) };
+</script>
+</body>
+</html>
