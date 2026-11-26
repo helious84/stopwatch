@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>달리는 스탑워치</title>
+<style>
+  :root {
+    --bg: #f5f5f4;
+    --card: #ffffff;
+    --text: #1c1917;
+    --muted: #78716c;
+    --line: #e7e5e4;
+    --accent: #16a34a;
+    --danger: #dc2626;
+    --best: #16a34a;
+    --worst: #dc2626;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0c0a09;
+      --card: #1c1917;
+      --text: #fafaf9;
+      --muted: #a8a29e;
+      --line: #292524;
+      --accent: #22c55e;
+      --danger: #ef4444;
+      --best: #4ade80;
+      --worst: #f87171;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    padding: 32px 16px;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", "Malgun Gothic", sans-serif;
+  }
+  .card {
+    width: 100%;
+    max-width: 640px;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 20px;
+    padding: 20px 20px 24px;
+  }
+  svg { display: block; width: 100%; height: auto; }
+  .tick-label {
+    font-size: 13px;
+    font-weight: 700;
+    fill: rgba(255,255,255,.85);
+    text-anchor: middle;
+    dominant-baseline: central;
+  }
+  .legend {
+    font-size: 11.5px;
+    fill: rgba(255,255,255,.7);
+    text-anchor: middle;
+  }
+  .clock {
+    font-size: 50px;
+    font-weight: 300;
+    fill: #fff;
+    text-anchor: middle;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -1px;
+  }
+  .clock .ms { fill: rgba(255,255,255,.6); }
+  .laps-count {
+    font-size: 15px;
+    font-weight: 600;
+    fill: rgba(255,255,255,.85);
+    text-anchor: middle;
+    transform-box: fill-box;
+    transform-origin: center;
+  }
+  .laps-count.pulse { animation: pulse .6s ease-out; }
+  @keyframes pulse {
+    0% { transform: scale(1.5); fill: #fde047; }
+    100% { transform: scale(1); }
+  }
+  .runner-label {
+    font-size: 11px;
+    font-weight: 800;
+    fill: #fff;
+    text-anchor: middle;
+    paint-order: stroke;
+    stroke: rgba(0,0,0,.6);
+    stroke-width: 3px;
+  }
+  .runner-pop { animation: pop .35s ease-out; transform-box: fill-box; transform-origin: center bottom; }
+  @keyframes pop { from { opacity: 0; transform: translateY(-8px); } }
+  .buttons {
+    display: flex;
+    gap: 12px;
+    margin: 20px 0 16px;
+  }
+  button {
+    flex: 1;
+    height: 52px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    font-size: 16px;
+    font-weight: 600;
+    font-family: inherit;
+    cursor: pointer;
+    background: var(--bg);
+    color: var(--text);
+    transition: opacity .15s;
+  }
+  button:hover:not(:disabled) { opacity: .85; }
+  button:disabled { opacity: .4; cursor: default; }
+  #startBtn { background: var(--accent); border-color: var(--accent); color: #fff; }
+  #startBtn.running { background: var(--danger); border-color: var(--danger); }
+  .laps {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 260px;
+    overflow-y: auto;
+  }
+  .laps li {
+    display: grid;
+    grid-template-columns: 90px 1fr 1fr;
+    align-items: center;
+    padding: 11px 4px;
+    border-top: 1px solid var(--line);
+    font-variant-numeric: tabular-nums;
+  }
+  .laps li span:nth-child(2), .laps li span:nth-child(3) { text-align: right; }
+  .laps li span:nth-child(3) { color: var(--muted); }
+  .laps li.best span:nth-child(2) { color: var(--best); font-weight: 600; }
+  .laps li.worst span:nth-child(2) { color: var(--worst); font-weight: 600; }
+  .dot {
+    display: inline-block;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    margin-right: 8px;
+    border: 1px solid rgba(0,0,0,.25);
+    vertical-align: -1px;
+  }
+  .hint {
+    margin-top: 14px;
+    text-align: center;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  kbd {
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 1px 5px;
+    font-family: inherit;
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    <svg viewBox="0 0 600 340" aria-label="트랙 위를 달리는 선수들. 한 바퀴는 60초">
+      <defs>
+        <pattern id="grass" width="40" height="340" patternUnits="userSpaceOnUse">
+          <rect width="20" height="340" fill="#3f8f4f"/>
+          <rect x="20" width="20" height="340" fill="#45985a"/>
+        </pattern>
+      </defs>
+
+      <rect x="0" y="0" width="600" height="340" rx="14" fill="#2f6e3d"/>
+      <path fill="none" stroke="#c8553d" stroke-width="56"
+            d="M300,40 H430 A130,130 0 0 1 430,300 H170 A130,130 0 0 1 170,40 Z"/>
+      <g fill="none" stroke="rgba(255,255,255,.45)" stroke-width="1.5">
+        <path d="M300,12 H430 A158,158 0 0 1 430,328 H170 A158,158 0 0 1 170,12 Z"/>
+        <path d="M300,26 H430 A144,144 0 0 1 430,314 H170 A144,144 0 0 1 170,26 Z"/>
+        <path d="M300,54 H430 A116,116 0 0 1 430,286 H170 A116,116 0 0 1 170,54 Z"/>
+        <path d="M300,68 H430 A102,102 0 0 1 430,272 H170 A102,102 0 0 1 170,68 Z"/>
+      </g>
+      <path fill="url(#grass)" d="M300,68 H430 A102,102 0 0 1 430,272 H170 A102,102 0 0 1 170,68 Z"/>
+
+      <path id="progress" fill="none" stroke="#fde047" stroke-width="4" stroke-linecap="round" opacity=".9"
+            d="M300,40 H430 A130,130 0 0 1 430,300 H170 A130,130 0 0 1 170,40 Z"/>
+      <path id="lane" fill="none" stroke="none"
+            d="M300,40 H430 A130,130 0 0 1 430,300 H170 A130,130 0 0 1 170,40 Z"/>
+
+      <rect x="297" y="12" width="6" height="56" fill="#fff"/>
+      <g id="ticks"></g>
+
+      <text class="laps-count" id="lapsCount" x="300" y="128">0바퀴 완주</text>
+      <text class="clock" id="clock" x="300" y="190">00:00<tspan class="ms">.00</tspan></text>
+      <text class="legend" x="300" y="222">한 바퀴 = 60초 · 노란 선수 = 전체 시간</text>
+      <text class="legend" x="300" y="238">번호 선수 = 각 랩 기록</text>
+
+      <g id="standing"></g>
+      <g id="movers"></g>
+    </svg>
+
+    <div class="buttons">
+      <button id="lapBtn" disabled>랩</button>
+      <button id="resetBtn" disabled>초기화</button>
+      <button id="startBtn">출발</button>
+    </div>
+    <ul class="laps" id="laps"></ul>
+    <div class="hint"><kbd>Space</kbd> 출발/정지 · <kbd>L</kbd> 랩 · <kbd>R</kbd> 초기화</div>
+  </div>
+
+<script>
+  const $ = id => document.getElementById(id);
+  const SVGNS = 'http://www.w3.org/2000/svg';
+  const LAP_MS = 60000;     // 트랙 한 바퀴 = 60초
+  const STRIDE_HZ = 1.5;    // 초당 걸음 주기
+
+  const COLORS = {
+    total: '#facc15',   // 전체 시간 선수
+    current: '#f5f5f4', // 지금 달리는 랩 선수
+    lap: '#38bdf8',     // 완주한 랩
+    best: '#22c55e',
+    worst: '#ef4444',
+  };
+
+  const lane = $('lane');
+  const L = lane.getTotalLength();
+  const progress = $('progress');
+  progress.style.strokeDasharray = L;
+
+  let running = false, startTime = 0, elapsed = 0, rafId = null;
+  let laps = [], lastLapTotal = 0, lastRev = 0;
+
+  function el(tag, attrs, parent) {
+    const e = document.createElementNS(SVGNS, tag);
+    for (const k in attrs) e.setAttribute(k, attrs[k]);
+    if (parent) parent.appendChild(e);
+    return e;
+  }
+
+  // 트랙 위 지점과 안쪽 방향 법선
+  function trackAt(d) {
+    d = ((d % L) + L) % L;
+    const p = lane.getPointAtLength(d);
+    const q = lane.getPointAtLength((d + 2) % L);
+    const tx = q.x - p.x, ty = q.y - p.y, n = Math.hypot(tx, ty) || 1;
+    return { x: p.x, y: p.y, dx: tx / n, nx: -ty / n, ny: tx / n };
+  }
+
+  // ---------- 눈금 ----------
+  (function drawTicks() {
+    const g = $('ticks');
+    for (let s = 1; s < 60; s++) {
+      const t = trackAt((s / 60) * L);
+      const major = s % 5 === 0;
+      const r0 = 28, r1 = major ? 19 : 24;
+      el('line', {
+        x1: t.x + t.nx * r0, y1: t.y + t.ny * r0,
+        x2: t.x + t.nx * r1, y2: t.y + t.ny * r1,
+        stroke: 'rgba(255,255,255,' + (major ? .9 : .45) + ')',
+        'stroke-width': major ? 2 : 1,
+      }, g);
+      if (s % 15 === 0) {
+        el('text', { class: 'tick-label', x: t.x + t.nx * 46, y: t.y + t.ny * 46 }, g).textContent = s + '초';
+      }
+    }
+    el('text', { class: 'tick-label', x: 300, y: 86 }, g).textContent = '0초';
+  })();
+
+  // ---------- 선수 ----------
+  function makeRunner(parent, jersey, label, before) {
+    const g = el('g', {});
+    parent.insertBefore(g, before || null);
+    el('ellipse', { cx: 0, cy: 1, rx: 11, ry: 3, fill: 'rgba(0,0,0,.25)' }, g);
+    const body = el('g', { 'stroke-linecap': 'round', 'stroke-linejoin': 'round', fill: 'none' }, g);
+    const r = { g, body, facing: 1 };
+    r.legBack  = el('polyline', { stroke: '#57534e', 'stroke-width': 4 }, body);
+    r.armBack  = el('polyline', { stroke: '#57534e', 'stroke-width': 3.5 }, body);
+    r.torso    = el('line', { stroke: jersey, 'stroke-width': 7 }, body);
+    r.head     = el('circle', { r: 5.5, fill: '#1c1917', stroke: 'none' }, body);
+    r.legFront = el('polyline', { stroke: '#1c1917', 'stroke-width': 4 }, body);
+    r.armFront = el('polyline', { stroke: '#1c1917', 'stroke-width': 3.5 }, body);
+    if (label != null) {
+      r.label = el('text', { class: 'runner-label' }, g);
+      r.label.textContent = label;
+    }
+    return r;
+  }
+
+  // d: 트랙 위 거리, offset: 바깥(+)/안쪽(-) 레인 이동, s: 크기
+  function place(r, d, offset, s, smoothFacing) {
+    const t = trackAt(d);
+    const x = t.x - t.nx * offset, y = t.y - t.ny * offset + 10;
+    if (smoothFacing) {
+      if (t.dx > 0.25) r.facing = 1; else if (t.dx < -0.25) r.facing = -1;
+    } else {
+      r.facing = t.dx >= 0 ? 1 : -1;
+    }
+    r.g.setAttribute('transform', `translate(${x.toFixed(1)},${y.toFixed(1)})`);
+    r.body.setAttribute('transform', `scale(${r.facing * s},${s})`);
+    if (r.label) { r.label.setAttribute('x', 0); r.label.setAttribute('y', -46 * s - 6); }
+  }
+
+  const pts = a => a.map(p => p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
+  // mode: 'run' | 'idle' | 'cheer'
+  function pose(r, phase, mode) {
+    const amp = mode === 'run' ? 1 : mode === 'idle' ? 0.35 : 0.1;
+    const bob = mode === 'run' ? -Math.abs(Math.cos(phase)) * 2 : 0;
+    const hip = [0, -18 + bob], sh = [3.5, -31 + bob], head = [5.5, -39 + bob];
+    if (mode === 'cheer') { sh[0] = 1; head[0] = 1.5; }
+
+    const leg = p => {
+      const a = Math.sin(p) * 0.85 * amp;
+      const b = 0.15 + 1.2 * Math.max(0, Math.cos(p)) * amp;
+      const knee = [hip[0] + 9.5 * Math.sin(a), hip[1] + 9.5 * Math.cos(a)];
+      const foot = [knee[0] + 9.5 * Math.sin(a - b), knee[1] + 9.5 * Math.cos(a - b)];
+      return [hip, knee, foot];
+    };
+    const arm = (p, side) => {
+      if (mode === 'cheer') {           // 두 팔 번쩍
+        const a = Math.PI - 0.45 * side;
+        const elbow = [sh[0] + 7 * Math.sin(a), sh[1] + 7 * Math.cos(a)];
+        const f = Math.PI - 0.15 * side;
+        return [sh, elbow, [elbow[0] + 6.5 * Math.sin(f), elbow[1] + 6.5 * Math.cos(f)]];
+      }
+      const a = -Math.sin(p) * 0.95 * amp;
+      const elbow = [sh[0] + 7 * Math.sin(a), sh[1] + 7 * Math.cos(a)];
+      const f = a + 1.5;
+      return [sh, elbow, [elbow[0] + 6.5 * Math.sin(f), elbow[1] + 6.5 * Math.cos(f)]];
+    };
+    r.legFront.setAttribute('points', pts(leg(phase)));
+    r.legBack.setAttribute('points', pts(leg(phase + Math.PI)));
+    r.armFront.setAttribute('points', pts(arm(phase + Math.PI, 1)));
+    r.armBack.setAttribute('points', pts(arm(phase, -1)));
+    r.torso.setAttribute('x1', hip[0]); r.torso.setAttribute('y1', hip[1]);
+    r.torso.setAttribute('x2', sh[0]);  r.torso.setAttribute('y2', sh[1]);
+    r.head.setAttribute('cx', head[0]); r.head.setAttribute('cy', head[1]);
+  }
+
+  const movers = $('movers'), standing = $('standing');
+  const mainRunner = makeRunner(movers, COLORS.total, null);
+  let lapRunner = null;   // 지금 진행 중인 랩을 달리는 선수
+
+  // ---------- 시간 ----------
+  const now = () => running ? elapsed + (performance.now() - startTime) : elapsed;
+  const pad = n => String(n).padStart(2, '0');
+  function parts(ms) {
+    const cs = Math.floor(ms / 10) % 100;
+    const s = Math.floor(ms / 1000) % 60;
+    const m = Math.floor(ms / 60000) % 60;
+    const h = Math.floor(ms / 3600000);
+    return [(h ? h + ':' : '') + pad(m) + ':' + pad(s), pad(cs)];
+  }
+  const format = ms => { const [a, b] = parts(ms); return a + '.' + b; };
+  const toDist = ms => ((ms % LAP_MS) / LAP_MS) * L;
+
+  function render() {
+    const t = now();
+    const [main, cs] = parts(t);
+    $('clock').firstChild.nodeValue = main;
+    $('clock').lastChild.textContent = '.' + cs;
+
+    const phase = (t / 1000) * STRIDE_HZ * 2 * Math.PI;
+    const mode = running ? 'run' : 'idle';
+
+    place(mainRunner, toDist(t), 0, 1.35, true);
+    pose(mainRunner, phase, mode);
+
+    if (lapRunner) {
+      const split = t - lastLapTotal;
+      place(lapRunner, toDist(split), 16, 1.15, true);
+      pose(lapRunner, phase + 1.3, mode);
+    }
+
+    progress.style.strokeDashoffset = L * (1 - (t % LAP_MS) / LAP_MS);
+
+    const rev = Math.floor(t / LAP_MS);
+    if (rev !== lastRev) {
+      const lc = $('lapsCount');
+      lc.textContent = rev + '바퀴 완주';
+      if (rev > lastRev) { lc.classList.remove('pulse'); void lc.getBBox(); lc.classList.add('pulse'); }
+      lastRev = rev;
+    }
+
+    const first = $('laps').firstElementChild;
+    if (first && first.dataset.current) {
+      first.children[1].textContent = format(t - lastLapTotal);
+      first.children[2].textContent = format(t);
+    }
+  }
+
+  function lapColor(i) {
+    if (laps.length > 1) {
+      if (laps[i] === Math.min(...laps)) return COLORS.best;
+      if (laps[i] === Math.max(...laps)) return COLORS.worst;
+    }
+    return COLORS.lap;
+  }
+
+  // 완주한 랩 선수들: 자기 랩 기록 위치에 서서 만세
+  function drawStanding(popIndex) {
+    standing.innerHTML = '';
+    laps.forEach((ms, i) => {
+      const r = makeRunner(standing, lapColor(i), i + 1);
+      place(r, toDist(ms), i % 2 ? 14 : -14, 1.05, false);
+      pose(r, 0, 'cheer');
+      if (i === popIndex) r.body.parentNode.classList.add('runner-pop');
+    });
+  }
+
+  function tick() { render(); rafId = requestAnimationFrame(tick); }
+
+  function renderLaps() {
+    const ul = $('laps');
+    ul.innerHTML = '';
+    const min = laps.length > 1 ? Math.min(...laps) : null;
+    const max = laps.length > 1 ? Math.max(...laps) : null;
+    const t = now();
+    if (laps.length || running) {
+      const li = document.createElement('li');
+      li.dataset.current = '1';
+      const c = laps.length ? COLORS.current : COLORS.total;
+      li.innerHTML = `<span><i class="dot" style="background:${c}"></i>랩 ${laps.length + 1}</span><span>${format(t - lastLapTotal)}</span><span>${format(t)}</span>`;
+      ul.appendChild(li);
+    }
+    let total = lastLapTotal;
+    for (let i = laps.length - 1; i >= 0; i--) {
+      const li = document.createElement('li');
+      if (laps[i] === min) li.className = 'best';
+      else if (laps[i] === max) li.className = 'worst';
+      li.innerHTML = `<span><i class="dot" style="background:${lapColor(i)}"></i>랩 ${i + 1}</span><span>${format(laps[i])}</span><span>${format(total)}</span>`;
+      total -= laps[i];
+      ul.appendChild(li);
+    }
+  }
+
+  function updateButtons() {
+    $('startBtn').textContent = running ? '정지' : (elapsed > 0 ? '계속' : '출발');
+    $('startBtn').classList.toggle('running', running);
+    $('lapBtn').disabled = !running;
+    $('resetBtn').disabled = running || elapsed === 0;
+  }
+
+  function toggle() {
+    if (running) {
+      elapsed += performance.now() - startTime;
+      running = false;
+      cancelAnimationFrame(rafId);
+      render();
+    } else {
+      startTime = performance.now();
+      running = true;
+      if (!$('laps').firstElementChild) renderLaps();
+      tick();
+    }
+    updateButtons();
+  }
+
+  function lap() {
+    if (!running) return;
+    const t = now();
+    laps.push(t - lastLapTotal);
+    lastLapTotal = t;
+    // 새 선수가 출발선에서 다음 랩을 달리기 시작
+    if (!lapRunner) lapRunner = makeRunner(movers, COLORS.current, '', mainRunner.g);
+    lapRunner.label.textContent = laps.length + 1;
+    drawStanding(laps.length - 1);
+    renderLaps();
+    render();
+  }
+
+  function reset() {
+    if (running) return;
+    elapsed = 0; laps = []; lastLapTotal = 0; lastRev = 0;
+    mainRunner.facing = 1;
+    if (lapRunner) { lapRunner.g.remove(); lapRunner = null; }
+    standing.innerHTML = '';
+    $('laps').innerHTML = '';
+    $('lapsCount').textContent = '0바퀴 완주';
+    render();
+    updateButtons();
+  }
+
+  [['startBtn', toggle], ['lapBtn', lap], ['resetBtn', reset]].forEach(([id, fn]) =>
+    $(id).addEventListener('click', e => { fn(); e.currentTarget.blur(); }));
+
+  document.addEventListener('keydown', e => {
+    if (e.repeat) return;
+    if (e.code === 'Space') { e.preventDefault(); toggle(); }
+    else if (e.key === 'l' || e.key === 'L' || e.key === 'ㅣ') lap();
+    else if (e.key === 'r' || e.key === 'R' || e.key === 'ㄱ') reset();
+  });
+
+  render();
+</script>
+</body>
+</html>
